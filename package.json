@@ -1,0 +1,13 @@
+
+{
+  "name": "node-k8s-app",
+  "version": "1.0.0",
+  "description": "Node.js app for Docker CI/CD and GHCR",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
