@@ -1,0 +1,77 @@
+
+name: Build Test and Publish Node App
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: node-k8s-app
+
+jobs:
+  build-test-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker image name
+        run: |
+          IMAGE_ID="${REGISTRY}/${GITHUB_REPOSITORY_OWNER}/${IMAGE_NAME}"
+          IMAGE_ID=$(echo "$IMAGE_ID" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_ID=$IMAGE_ID" >> "$GITHUB_ENV"
+
+      - name: Build Docker image
+        run: docker build -t node-k8s-app:ci .
+
+      - name: Start test container
+        run: |
+          docker run -d \
+            --name node-k8s-ci \
+            -p 3000:3000 \
+            node-k8s-app:ci
+
+      - name: Test application health
+        run: |
+          for attempt in {1..20}; do
+            if curl --fail --silent \
+              http://localhost:3000/health; then
+              echo "Health check passed"
+              exit 0
+            fi
+
+            echo "Waiting for application..."
+            sleep 3
+          done
+
+          docker logs node-k8s-ci
+          exit 1
+
+      - name: Clean up test container
+        if: always()
+        run: docker rm -f node-k8s-ci || true
+
+      - name: Login to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            docker login ghcr.io \
+              -u "${{ github.actor }}" \
+              --password-stdin
+
+      - name: Tag tested image
+        run: |
+          docker tag node-k8s-app:ci "$IMAGE_ID:latest"
+          docker tag node-k8s-app:ci "$IMAGE_ID:sha-${GITHUB_SHA}"
+
+      - name: Push image to GHCR
+        run: |
+          docker push "$IMAGE_ID:latest"
+          docker push "$IMAGE_ID:sha-${GITHUB_SHA}"
